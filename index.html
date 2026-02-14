@@ -127,8 +127,8 @@ function FinanceTracker(){
   const[importResult,setImportResult]=useState(null);
   const fileRef=useRef(null);
 
-  useEffect(()=>{try{const raw=localStorage.getItem(SK);if(raw){const d=JSON.parse(raw);setAccounts(d.accounts||[]);setSnapshots(d.snapshots||[]);setGoalAmount(d.goalAmount||0);setMortgageBalance(d.mortgageBalance||0);setHomeValue(d.homeValue||0);setMortRate(d.mortRate||0);setMortPayment(d.mortPayment||0);}catch(e){}setLoading(false);},[]);
-  const save=useCallback((a,s,x)=>{try{const d={accounts:a||accounts,snapshots:s||snapshots,goalAmount:(x&&x.goal)!==undefined?x.goal:goalAmount,mortgageBalance:(x&&x.mb)!==undefined?x.mb:mortgageBalance,homeValue:(x&&x.hv)!==undefined?x.hv:homeValue,mortRate:(x&&x.mr)!==undefined?x.mr:mortRate,mortPayment:(x&&x.mp)!==undefined?x.mp:mortPayment};localStorage.setItem(SK,JSON.stringify(d));}catch(e){}},[accounts,snapshots,goalAmount,mortgageBalance,homeValue,mortRate,mortPayment]);
+  useEffect(()=>{try{const raw=localStorage.getItem(SK);if(raw){const d=JSON.parse(raw);setAccounts(d.accounts||[]);setSnapshots(d.snapshots||[]);setGoalAmount(d.goalAmount||0);setMortgageBalance(d.mortgageBalance||0);setHomeValue(d.homeValue||0);setMortRate(d.mortRate||0);setMortPayment(d.mortPayment||0);}}catch(e){}setLoading(false);},[]);
+  const save=useCallback((a,s,x)=>{try{var g=x||{};const d={accounts:a||accounts,snapshots:s||snapshots,goalAmount:"goal" in g?g.goal:goalAmount,mortgageBalance:"mb" in g?g.mb:mortgageBalance,homeValue:"hv" in g?g.hv:homeValue,mortRate:"mr" in g?g.mr:mortRate,mortPayment:"mp" in g?g.mp:mortPayment};localStorage.setItem(SK,JSON.stringify(d));}catch(e){}},[accounts,snapshots,goalAmount,mortgageBalance,homeValue,mortRate,mortPayment]);
 
   const actv=useMemo(()=>accounts.filter(a=>!a.closed),[accounts]);
   const clsd=useMemo(()=>accounts.filter(a=>a.closed),[accounts]);
@@ -565,20 +565,14 @@ function FinanceTracker(){
 var errDiv = document.getElementById('error-display');
 try {
   var source = document.getElementById('app-source').textContent;
-  errDiv.textContent = 'Compiling... (' + source.length + ' chars)\n';
-  
   var header = 'const {useState,useEffect,useCallback,useMemo,useRef}=React;\n' +
     'const {LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,AreaChart,Area,PieChart,Pie,Cell,CartesianGrid,BarChart,Bar,ReferenceLine,ComposedChart}=Recharts;\n';
-  
   var fullSource = header + source + '\nReactDOM.createRoot(document.getElementById("root")).render(React.createElement(FinanceTracker));';
-  
   var compiled = Babel.transform(fullSource, { presets: ['react'] });
-  errDiv.textContent += 'Compiled OK. Running...\n';
-  
   eval(compiled.code);
-  errDiv.textContent = '';
+  errDiv.style.display = 'none';
 } catch(e) {
-  errDiv.textContent += 'BABEL/RUNTIME ERROR:\n' + e.message + '\n\n' + (e.stack || '');
+  errDiv.textContent = 'ERROR:\n' + e.message + '\n\n' + (e.stack || '');
 }
 </script>
 </body>

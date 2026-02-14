@@ -13,6 +13,7 @@
 body{background:#0d0d1a;overflow-x:hidden;font-family:'DM Sans',sans-serif;}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
 input[type=number]{-moz-appearance:textfield;}
+#error-display{color:#ef4444;font-size:13px;padding:20px;font-family:monospace;white-space:pre-wrap;word-break:break-all;}
 </style>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
@@ -23,6 +24,13 @@ input[type=number]{-moz-appearance:textfield;}
 </head>
 <body>
 <div id="root"></div>
+<div id="error-display"></div>
+<script>
+window.onerror = function(msg, url, line, col, error) {
+  document.getElementById('error-display').textContent += 'ERROR: ' + msg + '\nLine: ' + line + ', Col: ' + col + '\n' + (error && error.stack ? error.stack : '') + '\n\n';
+  return false;
+};
+</script>
 <script type="text/babel">
 const {useState,useEffect,useCallback,useMemo,useRef}=React;
 const {LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,AreaChart,Area,PieChart,Pie,Cell,CartesianGrid,BarChart,Bar,ReferenceLine,ComposedChart}=Recharts;

@@ -25,15 +25,7 @@ input[type=number]{-moz-appearance:textfield;}
 <body>
 <div id="root"></div>
 <div id="error-display"></div>
-<script>
-window.onerror = function(msg, url, line, col, error) {
-  document.getElementById('error-display').textContent += 'ERROR: ' + msg + '\nLine: ' + line + ', Col: ' + col + '\n' + (error && error.stack ? error.stack : '') + '\n\n';
-  return false;
-};
-</script>
-<script type="text/babel">
-const {useState,useEffect,useCallback,useMemo,useRef}=React;
-const {LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,AreaChart,Area,PieChart,Pie,Cell,CartesianGrid,BarChart,Bar,ReferenceLine,ComposedChart}=Recharts;
+<script id="app-source" type="text/plain">
 const SK = "finance-tracker-v3";
 const COLORS = ["#6366f1","#f59e0b","#10b981","#ef4444","#8b5cf6","#ec4899","#14b8a6","#f97316","#06b6d4","#84cc16"];
 const ATYPES = [{v:"brokerage",l:"Brokerage",i:"📈"},{v:"401k",l:"401(k)",i:"🏛️"},{v:"roth_ira",l:"Roth IRA",i:"🛡️"},{v:"trad_ira",l:"Traditional IRA",i:"📋"},{v:"hsa",l:"HSA",i:"🏥"},{v:"529",l:"529 Plan",i:"🎓"},{v:"crypto",l:"Crypto",i:"₿"},{v:"savings",l:"Savings",i:"🏦"},{v:"checking",l:"Checking",i:"💳"},{v:"real_estate",l:"Real Estate",i:"🏠"},{v:"other",l:"Other",i:"💰"}];
@@ -568,8 +560,26 @@ function FinanceTracker(){
     </div>
   );
 }
-
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(FinanceTracker));
+</script>
+<script>
+var errDiv = document.getElementById('error-display');
+try {
+  var source = document.getElementById('app-source').textContent;
+  errDiv.textContent = 'Compiling... (' + source.length + ' chars)\n';
+  
+  var header = 'const {useState,useEffect,useCallback,useMemo,useRef}=React;\n' +
+    'const {LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,AreaChart,Area,PieChart,Pie,Cell,CartesianGrid,BarChart,Bar,ReferenceLine,ComposedChart}=Recharts;\n';
+  
+  var fullSource = header + source + '\nReactDOM.createRoot(document.getElementById("root")).render(React.createElement(FinanceTracker));';
+  
+  var compiled = Babel.transform(fullSource, { presets: ['react'] });
+  errDiv.textContent += 'Compiled OK. Running...\n';
+  
+  eval(compiled.code);
+  errDiv.textContent = '';
+} catch(e) {
+  errDiv.textContent += 'BABEL/RUNTIME ERROR:\n' + e.message + '\n\n' + (e.stack || '');
+}
 </script>
 </body>
 </html>

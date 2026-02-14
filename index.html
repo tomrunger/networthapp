@@ -2,8 +2,18 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d0d1a">
+<title>Vault</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:#0d0d1a;overflow-x:hidden;font-family:'DM Sans',sans-serif;}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+input[type=number]{-moz-appearance:textfield;}
+</style>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
@@ -11,44 +21,547 @@
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js"></script>
 </head>
-<body style="background:#0d0d1a;color:#fff;font-family:sans-serif;padding:20px;">
+<body>
 <div id="root"></div>
-<div id="debug" style="color:#f59e0b;font-size:12px;margin-top:20px;"></div>
-<script>
-// Debug: check what loaded
-var d = document.getElementById('debug');
-d.innerHTML = 'React: ' + (typeof React) + '<br>' +
-  'ReactDOM: ' + (typeof ReactDOM) + '<br>' +
-  'Recharts: ' + (typeof Recharts) + '<br>' +
-  'Papa: ' + (typeof Papa) + '<br>' +
-  'Babel: ' + (typeof Babel) + '<br>';
-</script>
 <script type="text/babel">
-const {useState} = React;
-const {LineChart, Line, XAxis, YAxis, ResponsiveContainer} = Recharts;
+const {useState,useEffect,useCallback,useMemo,useRef}=React;
+const {LineChart,Line,XAxis,YAxis,Tooltip,ResponsiveContainer,AreaChart,Area,PieChart,Pie,Cell,CartesianGrid,BarChart,Bar,ReferenceLine,ComposedChart}=Recharts;
+const SK = "finance-tracker-v3";
+const COLORS = ["#6366f1","#f59e0b","#10b981","#ef4444","#8b5cf6","#ec4899","#14b8a6","#f97316","#06b6d4","#84cc16"];
+const ATYPES = [{v:"brokerage",l:"Brokerage",i:"📈"},{v:"401k",l:"401(k)",i:"🏛️"},{v:"roth_ira",l:"Roth IRA",i:"🛡️"},{v:"trad_ira",l:"Traditional IRA",i:"📋"},{v:"hsa",l:"HSA",i:"🏥"},{v:"529",l:"529 Plan",i:"🎓"},{v:"crypto",l:"Crypto",i:"₿"},{v:"savings",l:"Savings",i:"🏦"},{v:"checking",l:"Checking",i:"💳"},{v:"real_estate",l:"Real Estate",i:"🏠"},{v:"other",l:"Other",i:"💰"}];
+const GROUPS=["Retirement","Taxable","Cash","Real Assets","Other"];
+const GC={"Retirement":"#6366f1","Taxable":"#f59e0b","Cash":"#10b981","Real Assets":"#ec4899","Other":"#8b5cf6"};
+const MILESTONES=[10000,25000,50000,100000,250000,500000,750000,1000000,1500000,2000000,5000000,10000000];
 
-function App() {
-  const [count, setCount] = useState(0);
-  const data = [{name:'Jan',v:100},{name:'Feb',v:200},{name:'Mar',v:150}];
-  return (
-    <div>
-      <h1>Vault Test</h1>
-      <p>Count: {count}</p>
-      <button onClick={() => setCount(count+1)} style={{padding:'10px 20px',background:'#6366f1',color:'#fff',border:'none',borderRadius:8,cursor:'pointer',marginBottom:20}}>Click me</button>
-      <div style={{width:'100%',height:200}}>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={data}>
-            <XAxis dataKey="name" stroke="#666"/>
-            <YAxis stroke="#666"/>
-            <Line type="monotone" dataKey="v" stroke="#6366f1" strokeWidth={2}/>
-          </LineChart>
-        </ResponsiveContainer>
+const gid=()=>Date.now().toString(36)+Math.random().toString(36).substr(2,5);
+const fC=v=>{if(v==null||isNaN(v))return"$0";if(Math.abs(v)>=1e6)return`$${(v/1e6).toFixed(2)}M`;if(Math.abs(v)>=1e3)return`$${(v/1e3).toFixed(1)}K`;return`$${Math.round(v).toLocaleString()}`};
+const fFC=v=>{if(v==null||isNaN(v))return"$0.00";return`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`};
+const fD=d=>{const dt=new Date(d);return`${dt.getMonth()+1}/${String(dt.getFullYear()).slice(2)}`;};
+const fFD=d=>new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+const fMY=d=>new Date(d).toLocaleDateString("en-US",{month:"short",year:"numeric"});
+const td=()=>new Date().toISOString().split("T")[0];
+
+function pD(raw){if(!raw)return null;const s=String(raw).trim();if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;if(/^\d{4}-\d{2}-\d{2}T/.test(s))return s.split("T")[0];let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m)return`${m[3]}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;m=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);if(m)return`${m[3]}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;const d=new Date(s);if(!isNaN(d.getTime())&&d.getFullYear()>1900)return d.toISOString().split("T")[0];return null;}
+function pV(raw){if(raw==null||raw==="")return null;const v=parseFloat(String(raw).replace(/[$,\s]/g,""));return isNaN(v)?null:v;}
+function getLatest(snaps,aid){for(let i=snaps.length-1;i>=0;i--)if(snaps[i].values[aid]!==undefined)return{value:snaps[i].values[aid],date:snaps[i].date};return{value:0,date:null};}
+function getFirst(snaps,aid){for(let i=0;i<snaps.length;i++)if(snaps[i].values[aid]!==undefined)return{value:snaps[i].values[aid],date:snaps[i].date};return{value:0,date:null};}
+function getPrev(snaps,aid){let found=false;for(let i=snaps.length-1;i>=0;i--){if(snaps[i].values[aid]!==undefined){if(found)return snaps[i].values[aid];found=true;}}return 0;}
+function calcGrowth(snaps,aid,contributions=0){
+  const f=getFirst(snaps,aid),l=getLatest(snaps,aid);
+  if(!f.date||!l.date)return{pct:0,dollar:0,months:0,ann:0,realPct:0,realDollar:0};
+  const dollar=l.value-f.value,pct=f.value>0?(dollar/f.value)*100:0;
+  const ms=new Date(l.date)-new Date(f.date),months=ms/(1000*60*60*24*30.44),years=months/12;
+  const ann=years>0.25?((Math.pow(l.value/f.value,1/years)-1)*100):0;
+  const realDollar=l.value-(f.value+contributions);
+  const realPct=(f.value+contributions)>0?(realDollar/(f.value+contributions))*100:pct;
+  return{pct,dollar,months:Math.round(months),ann,realPct:contributions>0?realPct:pct,realDollar:contributions>0?realDollar:dollar};
+}
+function buildProjection(chartData,years=40){
+  if(!chartData||chartData.length<1)return[];
+  const rates={conservative:0.04,moderate:0.07,aggressive:0.10};const data=[];const seen=new Set();
+  chartData.forEach(d=>{const dt=new Date(d.date);const key=`${dt.getMonth()+1}/${String(dt.getFullYear()).slice(2)}`;if(!seen.has(key)){seen.add(key);data.push({label:key,actual:d.total,conservative:null,moderate:null,aggressive:null});}else{const idx=data.findIndex(x=>x.label===key);if(idx>=0)data[idx].actual=d.total;}});
+  const lastVal=chartData[chartData.length-1].total;const lastDate=new Date(chartData[chartData.length-1].date);
+  if(data.length>0){const last=data[data.length-1];last.conservative=lastVal;last.moderate=lastVal;last.aggressive=lastVal;}
+  for(let m=1;m<=years*12;m++){const futDate=new Date(lastDate.getFullYear(),lastDate.getMonth()+m,1);const key=`${futDate.getMonth()+1}/${String(futDate.getFullYear()).slice(2)}`;if(m%3!==0&&m<years*12)continue;const yrs=m/12;data.push({label:key,actual:null,conservative:Math.round(lastVal*Math.pow(1+rates.conservative,yrs)),moderate:Math.round(lastVal*Math.pow(1+rates.moderate,yrs)),aggressive:Math.round(lastVal*Math.pow(1+rates.aggressive,yrs))});}
+  return data;
+}
+function buildMortgageProjection(balance,rate,monthlyPayment,years=30){
+  if(balance<=0||monthlyPayment<=0||rate<=0)return[];const data=[];let bal=balance;const mr=rate/12;
+  for(let m=0;m<=years*12&&bal>0;m++){const dt=new Date();dt.setMonth(dt.getMonth()+m);const key=`${dt.getMonth()+1}/${String(dt.getFullYear()).slice(2)}`;
+    if(m%3===0||bal<=0)data.push({label:key,balance:Math.round(Math.max(0,bal))});
+    if(m>0){const interest=bal*mr;const principal=Math.min(monthlyPayment-interest,bal);bal-=principal;if(bal<1)bal=0;}}
+  return data;
+}
+function exportCSV(accounts,snapshots){
+  const headers=["Date",...accounts.map(a=>a.name)];
+  const rows=snapshots.map(s=>[s.date,...accounts.map(a=>s.values[a.id]!==undefined?s.values[a.id]:"")]);
+  const csv=[headers.join(","),...rows.map(r=>r.join(","))].join("\n");
+  const blob=new Blob([csv],{type:"text/csv"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`vault-export-${td()}.csv`;a.click();URL.revokeObjectURL(url);
+}
+
+const TT=({active,payload,label})=>{if(!active||!(payload&&payload.length))return null;return(<div style={{background:"#1a1a2e",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 14px",boxShadow:"0 8px 32px rgba(0,0,0,0.4)",maxWidth:300}}><p style={{color:"rgba(255,255,255,0.5)",fontSize:11,margin:0,marginBottom:6}}>{label&&(label.includes("-")?fFD(label):label)}</p>{payload.filter(p=>p.value!==0&&p.value!=null).map((p,i)=>(<p key={i} style={{color:p.color||"#fff",fontSize:12,margin:"2px 0",fontWeight:600,fontFamily:"'DM Sans',sans-serif"}}>{p.name}: {typeof p.value==="number"?fFC(p.value):p.value}</p>))}</div>);};
+const Badge=({closed})=>!closed?null:<span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.5px",background:"rgba(239,68,68,0.12)",color:"#f87171",padding:"2px 8px",borderRadius:20,marginLeft:8}}>Closed</span>;
+const GBadge=({group})=>!group?null:<span style={{fontSize:10,fontWeight:600,background:`${GC[group]||"#6366f1"}15`,color:GC[group]||"#6366f1",padding:"2px 8px",borderRadius:20,marginLeft:6}}>{group}</span>;
+
+function FinanceTracker(){
+  const[accounts,setAccounts]=useState([]);
+  const[snapshots,setSnapshots]=useState([]);
+  const[view,setView]=useState("dashboard");
+  const[showAddAccount,setShowAddAccount]=useState(false);
+  const[showLogEntry,setShowLogEntry]=useState(false);
+  const[showImport,setShowImport]=useState(false);
+  const[showSettings,setShowSettings]=useState(false);
+  const[newAccount,setNewAccount]=useState({name:"",type:"brokerage",group:"Other"});
+  const[entryValues,setEntryValues]=useState({});
+  const[entryDate,setEntryDate]=useState(td());
+  const[chartRange,setChartRange]=useState("all");
+  const[loading,setLoading]=useState(true);
+  const[confirmDelete,setConfirmDelete]=useState(null);
+  const[showClosed,setShowClosed]=useState(false);
+  const[goalAmount,setGoalAmount]=useState(0);
+  const[goalInput,setGoalInput]=useState("");
+  const[editContrib,setEditContrib]=useState(null);
+  const[contribInput,setContribInput]=useState("");
+  const[milestone,setMilestone]=useState(null);
+  // Edit entry
+  const[editSnap,setEditSnap]=useState(null);
+  const[editSnapValues,setEditSnapValues]=useState({});
+  // Account notes
+  const[editNote,setEditNote]=useState(null);
+  const[noteInput,setNoteInput]=useState("");
+  // Mortgage
+  const[mortgageBalance,setMortgageBalance]=useState(0);
+  const[homeValue,setHomeValue]=useState(0);
+  const[mortBalInput,setMortBalInput]=useState("");
+  const[homeValInput,setHomeValInput]=useState("");
+  const[mortRate,setMortRate]=useState(0);
+  const[mortPayment,setMortPayment]=useState(0);
+  const[mortRateInput,setMortRateInput]=useState("");
+  const[mortPayInput,setMortPayInput]=useState("");
+  // Import
+  const[csvData,setCsvData]=useState(null);
+  const[csvHeaders,setCsvHeaders]=useState([]);
+  const[dateCol,setDateCol]=useState("");
+  const[colMap,setColMap]=useState({});
+  const[importPreview,setImportPreview]=useState(null);
+  const[importResult,setImportResult]=useState(null);
+  const fileRef=useRef(null);
+
+  useEffect(()=>{try{const raw=localStorage.getItem(SK);if(raw){const d=JSON.parse(raw);setAccounts(d.accounts||[]);setSnapshots(d.snapshots||[]);setGoalAmount(d.goalAmount||0);setMortgageBalance(d.mortgageBalance||0);setHomeValue(d.homeValue||0);setMortRate(d.mortRate||0);setMortPayment(d.mortPayment||0);}catch(e){}setLoading(false);},[]);
+  const save=useCallback((a,s,x)=>{try{const d={accounts:a||accounts,snapshots:s||snapshots,goalAmount:(x&&x.goal)!==undefined?x.goal:goalAmount,mortgageBalance:(x&&x.mb)!==undefined?x.mb:mortgageBalance,homeValue:(x&&x.hv)!==undefined?x.hv:homeValue,mortRate:(x&&x.mr)!==undefined?x.mr:mortRate,mortPayment:(x&&x.mp)!==undefined?x.mp:mortPayment};localStorage.setItem(SK,JSON.stringify(d));}catch(e){}},[accounts,snapshots,goalAmount,mortgageBalance,homeValue,mortRate,mortPayment]);
+
+  const actv=useMemo(()=>accounts.filter(a=>!a.closed),[accounts]);
+  const clsd=useMemo(()=>accounts.filter(a=>a.closed),[accounts]);
+  const aL=useMemo(()=>{const m={};accounts.forEach(a=>{m[a.id]=getLatest(snapshots,a.id);});return m;},[accounts,snapshots]);
+  const aP=useMemo(()=>{const m={};accounts.forEach(a=>{m[a.id]=getPrev(snapshots,a.id);});return m;},[accounts,snapshots]);
+  const aG=useMemo(()=>{const m={};accounts.forEach(a=>{m[a.id]=calcGrowth(snapshots,a.id,a.contributions||0);});return m;},[accounts,snapshots]);
+  const filled=useMemo(()=>{const lk={};return snapshots.map(s=>{const f={...s.values};accounts.forEach(a=>{if(f[a.id]!==undefined)lk[a.id]=f[a.id];else if(lk[a.id]!==undefined)f[a.id]=lk[a.id];});return{...s,filled:f};});},[snapshots,accounts]);
+
+  // Actions
+  const addAcct=()=>{if(!newAccount.name.trim())return;const u=[...accounts,{id:gid(),name:newAccount.name.trim(),type:newAccount.type,group:newAccount.group||"Other",color:COLORS[accounts.length%COLORS.length],createdAt:new Date().toISOString(),closed:false,contributions:0,notes:""}];setAccounts(u);save(u,snapshots);setNewAccount({name:"",type:"brokerage",group:"Other"});setShowAddAccount(false);};
+  const delAcct=(id)=>{const u=accounts.filter(a=>a.id!==id);const us=snapshots.map(s=>{const v={...s.values};delete v[id];return{...s,values:v};}).filter(s=>Object.keys(s.values).length>0);setAccounts(u);setSnapshots(us);save(u,us);setConfirmDelete(null);};
+  const toggleClosed=(id)=>{const u=accounts.map(a=>a.id===id?{...a,closed:!a.closed,closedAt:!a.closed?new Date().toISOString():null}:a);setAccounts(u);save(u,snapshots);};
+  const saveContrib=(id)=>{const v=parseFloat(contribInput);if(isNaN(v))return;const u=accounts.map(a=>a.id===id?{...a,contributions:v}:a);setAccounts(u);save(u,snapshots);setEditContrib(null);setContribInput("");};
+  const saveNote=(id)=>{const u=accounts.map(a=>a.id===id?{...a,notes:noteInput}:a);setAccounts(u);save(u,snapshots);setEditNote(null);setNoteInput("");};
+  const updateGroup=(id,g)=>{const u=accounts.map(a=>a.id===id?{...a,group:g}:a);setAccounts(u);save(u,snapshots);};
+  const saveGoal=()=>{const v=parseFloat(goalInput);if(isNaN(v)||v<=0)return;setGoalAmount(v);save(accounts,snapshots,{goal:v});setGoalInput("");setShowSettings(false);};
+
+  // Log entry with pre-fill + milestone detection
+  const openLogEntry=()=>{const pf={};actv.forEach(a=>{const l=getLatest(snapshots,a.id);if(l.value>0)pf[a.id]=String(l.value);});setEntryValues(pf);setEntryDate(td());setShowLogEntry(true);};
+  const logEntry=()=>{const vals={};let has=false;actv.forEach(a=>{const v=parseFloat(entryValues[a.id]);if(!isNaN(v)){vals[a.id]=v;has=true;}});if(!has)return;const ei=snapshots.findIndex(s=>s.date===entryDate);let u;if(ei>=0){u=[...snapshots];u[ei]={...u[ei],values:{...u[ei].values,...vals}};}else{u=[...snapshots,{id:gid(),date:entryDate,values:vals}].sort((a,b)=>a.date.localeCompare(b.date));}setSnapshots(u);save(accounts,u);setEntryValues({});setEntryDate(td());setShowLogEntry(false);
+    // Milestone check
+    const newTotal=accounts.reduce((s,a)=>s+(vals[a.id]||getLatest(u,a.id).value||0),0);
+    const prevTotal=accounts.reduce((s,a)=>s+(((aL[a.id]||{}).value)||0),0);
+    const crossed=MILESTONES.find(m=>prevTotal<m&&newTotal>=m);if(crossed)setMilestone(crossed);
+  };
+  const delSnap=(id)=>{const u=snapshots.filter(s=>s.id!==id);setSnapshots(u);save(accounts,u);};
+
+  // Edit existing snapshot
+  const openEditSnap=(s)=>{const vals={};accounts.forEach(a=>{if(s.values[a.id]!==undefined)vals[a.id]=String(s.values[a.id]);});setEditSnapValues(vals);setEditSnap(s);};
+  const saveEditSnap=()=>{if(!editSnap)return;const vals={};accounts.forEach(a=>{const v=parseFloat(editSnapValues[a.id]);if(!isNaN(v))vals[a.id]=v;else if(editSnap.values[a.id]!==undefined)vals[a.id]=editSnap.values[a.id];});const u=snapshots.map(s=>s.id===editSnap.id?{...s,values:vals}:s);setSnapshots(u);save(accounts,u);setEditSnap(null);setEditSnapValues({});};
+
+  // Mortgage save
+  const saveMortgageVals=()=>{const mb=parseFloat(mortBalInput)||mortgageBalance;const hv=parseFloat(homeValInput)||homeValue;const mr=parseFloat(mortRateInput)||mortRate;const mp=parseFloat(mortPayInput)||mortPayment;setMortgageBalance(mb);setHomeValue(hv);setMortRate(mr);setMortPayment(mp);save(accounts,snapshots,{mb,hv,mr,mp});setMortBalInput("");setHomeValInput("");setMortRateInput("");setMortPayInput("");};
+
+  // CSV Import
+  const handleFile=(e)=>{const f=e.target.files[0];if(!f)return;Papa.parse(f,{header:true,skipEmptyLines:true,complete:(r)=>{setCsvData(r.data);const h=r.meta.fields||[];setCsvHeaders(h);const dc=h.find(x=>/date|month|period|time/i.test(x));setDateCol(dc||h[0]||"");const m={};h.forEach(x=>{if(x===(dc||h[0]))return;const ex=accounts.find(a=>a.name.toLowerCase()===x.toLowerCase().trim());if(ex)m[x]={accountName:ex.name,accountType:ex.type,accountId:ex.id};else m[x]={accountName:x,accountType:"other",accountId:null};});setColMap(m);setImportPreview(null);setImportResult(null);},error:(err)=>{alert("Parse error: "+err.message);}});};
+  const toggleSkip=(h)=>{setColMap(p=>{const c={...p};if((c[h]&&c[h]._skip))c[h]={accountName:h,accountType:"other",accountId:null};else c[h]={...c[h],_skip:true};return c;});};
+  const updateCol=(h,f,v)=>{setColMap(p=>({...p,[h]:{...p[h],[f]:v}}));};
+  const linkCol=(h,aid)=>{if(!aid){setColMap(p=>({...p,[h]:{accountName:h,accountType:"other",accountId:null}}));return;}const a=accounts.find(x=>x.id===aid);if(a)setColMap(p=>({...p,[h]:{accountName:a.name,accountType:a.type,accountId:a.id}}));};
+  const genPreview=()=>{if(!csvData||!dateCol)return;const ac=Object.entries(colMap).filter(([,v])=>!v._skip);let vr=0,sr=0,na=0,ea=0,dupes=0;ac.forEach(([,v])=>{if(v.accountId)ea++;else na++;});csvData.forEach(row=>{const d=pD(row[dateCol]);if(!d){sr++;return;}if(snapshots.some(s=>s.date===d))dupes++;if(ac.some(([h])=>pV(row[h])!==null))vr++;else sr++;});setImportPreview({validRows:vr,skippedRows:sr,newAccts:na,existingAccts:ea,totalCols:ac.length,dupes});};
+  const execImport=()=>{if(!csvData||!dateCol)return;const ac=Object.entries(colMap).filter(([,v])=>!v._skip);let ua=[...accounts];const c2a={};ac.forEach(([h,m])=>{if(m.accountId){c2a[h]=m.accountId;}else{const nid=gid();ua.push({id:nid,name:m.accountName,type:m.accountType,group:"Other",color:COLORS[ua.length%COLORS.length],createdAt:new Date().toISOString(),closed:false,contributions:0,notes:""});c2a[h]=nid;}});let us=[...snapshots];let ir=0;csvData.forEach(row=>{const d=pD(row[dateCol]);if(!d)return;const vals={};let has=false;ac.forEach(([h])=>{const v=pV(row[h]);if(v!==null){vals[c2a[h]]=v;has=true;}});if(!has)return;const ei=us.findIndex(s=>s.date===d);if(ei>=0)us[ei]={...us[ei],values:{...us[ei].values,...vals}};else us.push({id:gid(),date:d,values:vals});ir++;});us.sort((a,b)=>a.date.localeCompare(b.date));setAccounts(ua);setSnapshots(us);save(ua,us);setImportResult({importedRows:ir,newAccounts:ac.filter(([,v])=>!v.accountId).length});};
+  const resetImport=()=>{setCsvData(null);setCsvHeaders([]);setDateCol("");setColMap({});setImportPreview(null);setImportResult(null);if(fileRef.current)fileRef.current.value="";};
+
+  // Computed
+  const chartData=useMemo(()=>{let f=[...filled];const n=new Date();
+    if(chartRange==="1m")f=f.filter(s=>new Date(s.date)>=new Date(n.getFullYear(),n.getMonth()-1,n.getDate()));
+    else if(chartRange==="3m")f=f.filter(s=>new Date(s.date)>=new Date(n.getFullYear(),n.getMonth()-3,n.getDate()));
+    else if(chartRange==="6m")f=f.filter(s=>new Date(s.date)>=new Date(n.getFullYear(),n.getMonth()-6,n.getDate()));
+    else if(chartRange==="1y")f=f.filter(s=>new Date(s.date)>=new Date(n.getFullYear()-1,n.getMonth(),n.getDate()));
+    else if(chartRange==="2y")f=f.filter(s=>new Date(s.date)>=new Date(n.getFullYear()-2,n.getMonth(),n.getDate()));
+    return f.map(s=>{const r={date:s.date,total:0};accounts.forEach(a=>{const v=s.filled[a.id]||0;r[a.id]=v;r.total+=v;});return r;});
+  },[filled,accounts,chartRange]);
+  const momData=useMemo(()=>{if(filled.length<2)return[];const monthly={};filled.forEach(s=>{const mk=s.date.substring(0,7);if(!monthly[mk])monthly[mk]=s;else if(s.date>monthly[mk].date)monthly[mk]=s;});const keys=Object.keys(monthly).sort();return keys.map((mk,i)=>{const s=monthly[mk];const tot=accounts.reduce((sum,a)=>sum+(s.filled[a.id]||0),0);const prev=i>0?monthly[keys[i-1]]:null;const prevTot=prev?accounts.reduce((sum,a)=>sum+(prev.filled[a.id]||0),0):0;const chg=prev?tot-prevTot:0;const pct=prevTot>0?((chg/prevTot)*100):0;return{month:mk,date:s.date,total:tot,change:chg,pct};});},[filled,accounts]);
+  const groupAlloc=useMemo(()=>{const m={};GROUPS.forEach(g=>{m[g]=0;});accounts.filter(a=>!a.closed).forEach(a=>{m[a.group||"Other"]=(m[a.group||"Other"]||0)+(((aL[a.id]||{}).value)||0);});const arr=Object.entries(m).filter(([,v])=>v>0).map(([name,value])=>({name,value,fill:GC[name]||"#6366f1",percent:0}));const t=arr.reduce((s,g)=>s+g.value,0);arr.forEach(g=>{g.percent=t>0?(g.value/t*100).toFixed(1):0;});return arr;},[accounts,aL]);
+  const contribData=useMemo(()=>accounts.filter(a=>!a.closed&&(a.contributions>0)).map(a=>{const v=((aL[a.id]||{}).value)||0;const c=a.contributions||0;const f=getFirst(snapshots,a.id).value;return{name:a.name,contributions:c,gain:v-f-c};}),[accounts,aL,snapshots]);
+
+  const tv=accounts.reduce((s,a)=>s+(((aL[a.id]||{}).value)||0),0);
+  const totalContrib=accounts.reduce((s,a)=>s+(a.contributions||0),0);
+  const pt=accounts.reduce((s,a)=>s+(aP[a.id]||0),0);
+  const tc=pt>0?tv-pt:0;const tcp=pt>0?((tc/pt)*100).toFixed(1):0;
+  const allocData=accounts.filter(a=>!a.closed).map(a=>{const v=((aL[a.id]||{}).value)||0;const atv=actv.reduce((s,x)=>s+(((aL[x.id]||{}).value)||0),0);return{name:a.name,value:v,fill:a.color,percent:atv>0?((v/atv)*100).toFixed(1):0};}).filter(d=>d.value>0);
+  const sortedGrowth=useMemo(()=>[...accounts].filter(a=>((aG[a.id]||{}).months)>=1).sort((a,b)=>(((aG[b.id]||{}).realPct)||0)-(((aG[a.id]||{}).realPct)||0)),[accounts,aG]);
+  const goalPct=goalAmount>0?Math.min((tv/goalAmount)*100,100):0;
+  const projData=useMemo(()=>chartData.length>0?buildProjection(chartData,40):[],[chartData]);
+  const equity=homeValue-mortgageBalance;
+  const netWorth=tv+Math.max(0,equity);
+  const mortProjData=useMemo(()=>buildMortgageProjection(mortgageBalance,mortRate/100,mortPayment),[mortgageBalance,mortRate,mortPayment]);
+
+  // YTD stats
+  const ytdStats=useMemo(()=>{const jan1=`${new Date().getFullYear()}-01-01`;const ytdSnaps=filled.filter(s=>s.date>=jan1);if(ytdSnaps.length<1)return null;
+    const firstTot=accounts.reduce((s,a)=>s+(ytdSnaps[0].filled[a.id]||0),0);const ytdChange=tv-firstTot;const ytdPct=firstTot>0?((ytdChange/firstTot)*100):0;
+    let bestMo=null,worstMo=null;momData.filter(m=>m.month>=jan1.substring(0,7)).forEach(m=>{if(!bestMo||m.pct>bestMo.pct)bestMo=m;if(!worstMo||m.pct<worstMo.pct)worstMo=m;});
+    return{ytdChange,ytdPct,bestMo,worstMo};
+  },[filled,accounts,tv,momData]);
+
+  if(loading)return(<div style={{minHeight:"100vh",background:"#0d0d1a",display:"flex",alignItems:"center",justifyContent:"center"}}><p style={{color:"rgba(255,255,255,0.4)",fontFamily:"'DM Sans',sans-serif"}}>Loading...</p></div>);
+
+  // Styles
+  const IS={background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 14px",color:"#fff",fontSize:14,fontFamily:"'DM Sans',sans-serif",outline:"none",width:"100%",boxSizing:"border-box"};
+  const BP={background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontSize:14,fontWeight:600,fontFamily:"'DM Sans',sans-serif",cursor:"pointer",boxShadow:"0 4px 16px rgba(99,102,241,0.3)"};
+  const BS={background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"10px 20px",fontSize:14,fontWeight:500,fontFamily:"'DM Sans',sans-serif",cursor:"pointer"};
+  const BD={...BS,color:"#ef4444",borderColor:"rgba(239,68,68,0.3)"};
+  const BG={background:"linear-gradient(135deg,#10b981,#059669)",color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontSize:14,fontWeight:600,fontFamily:"'DM Sans',sans-serif",cursor:"pointer"};
+  const CS={background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:16,padding:24};
+  const MO={position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20};
+  const MC={background:"#151528",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:28,width:"100%",maxWidth:560,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.5)"};
+  const LS={display:"block",color:"rgba(255,255,255,0.5)",fontSize:12,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.5px"};
+  const chp=(on)=>({background:on?"rgba(99,102,241,0.2)":"rgba(255,255,255,0.04)",border:on?"1px solid rgba(99,102,241,0.3)":"1px solid rgba(255,255,255,0.06)",color:on?"#a5b4fc":"rgba(255,255,255,0.4)",borderRadius:8,padding:"5px 14px",fontSize:12,fontWeight:600,fontFamily:"'DM Sans',sans-serif",cursor:"pointer"});
+  const sm={fontSize:10,color:"rgba(255,255,255,0.35)",margin:0,textTransform:"uppercase"};
+  const svl={fontSize:14,fontWeight:700,margin:0,fontFamily:"'Space Mono',monospace"};
+  const dA=showClosed?accounts:actv;
+  const TABS=["dashboard","insights","mortgage","accounts","history"];
+
+  return(
+    <div style={{minHeight:"100vh",background:"#0d0d1a",color:"#fff",fontFamily:"'DM Sans',sans-serif",padding:"20px 16px 40px"}}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+      <div style={{maxWidth:960,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:10}}>
+          <div><h1 style={{fontSize:28,fontWeight:700,margin:0,background:"linear-gradient(135deg,#fff 0%,rgba(255,255,255,0.6) 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",letterSpacing:"-0.5px"}}>💎 Vault</h1><p style={{color:"rgba(255,255,255,0.35)",fontSize:13,margin:"4px 0 0"}}>Personal Finance Tracker</p></div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>{setGoalInput(goalAmount>0?String(goalAmount):"");setShowSettings(true);}} style={{...BS,padding:"8px 14px",fontSize:12}}>⚙️</button>
+            <button onClick={()=>{resetImport();setShowImport(true);}} style={{...BS,padding:"8px 14px"}}>📤 Import</button>
+            <button onClick={()=>setShowAddAccount(true)} style={{...BS,padding:"8px 14px"}}>+ Account</button>
+            <button onClick={openLogEntry} style={BP} disabled={actv.length===0}>Log Values</button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:4,marginTop:20,marginBottom:24,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
+          {TABS.map(v=>(<button key={v} onClick={()=>setView(v)} style={{background:"none",border:"none",color:view===v?"#fff":"rgba(255,255,255,0.35)",fontFamily:"'DM Sans',sans-serif",fontSize:14,fontWeight:view===v?600:400,padding:"8px 16px 12px",cursor:"pointer",borderBottom:view===v?"2px solid #6366f1":"2px solid transparent",textTransform:"capitalize"}}>{v==="mortgage"?"🏠 Mortgage":v}</button>))}
+        </div>
+
+        {accounts.length===0&&view!=="mortgage"&&(<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:48,marginBottom:16}}>📊</div><h2 style={{fontSize:20,fontWeight:600,margin:"0 0 8px",color:"rgba(255,255,255,0.8)"}}>No accounts yet</h2><p style={{color:"rgba(255,255,255,0.4)",fontSize:14,margin:"0 0 24px"}}>Add accounts manually or import a CSV.</p><div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}><button onClick={()=>setShowAddAccount(true)} style={BP}>+ Add Account</button><button onClick={()=>{resetImport();setShowImport(true);}} style={BS}>📤 Import CSV</button></div></div>)}
+
+      {/* Milestone toast */}
+      {milestone&&(<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"linear-gradient(135deg,#f59e0b,#f97316)",borderRadius:16,padding:"16px 28px",boxShadow:"0 8px 32px rgba(245,158,11,0.4)",zIndex:2000,textAlign:"center",animation:"fadeIn 0.3s"}} onClick={()=>setMilestone(null)}>
+        <div style={{fontSize:32,marginBottom:4}}>🎉</div>
+        <p style={{fontSize:16,fontWeight:700,margin:0,color:"#fff"}}>Milestone Reached!</p>
+        <p style={{fontSize:14,margin:"4px 0 0",color:"rgba(255,255,255,0.9)"}}>Your portfolio crossed {fC(milestone)}</p>
+        <p style={{fontSize:11,margin:"8px 0 0",color:"rgba(255,255,255,0.6)"}}>Tap to dismiss</p>
+      </div>)}
+
+{/* ═══════════ DASHBOARD ═══════════ */}
+{view==="dashboard"&&accounts.length>0&&(<div>
+  {/* Net Worth */}
+  {(equity>0||tv>0)&&(<div style={{...CS,marginBottom:16,padding:"16px 24px",background:"linear-gradient(135deg,rgba(20,184,166,0.06) 0%,rgba(99,102,241,0.06) 100%)",border:"1px solid rgba(20,184,166,0.12)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div><p style={{color:"rgba(255,255,255,0.4)",fontSize:12,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.5px"}}>💎 Total Net Worth</p><span style={{fontSize:28,fontWeight:700,fontFamily:"'Space Mono',monospace",letterSpacing:"-1px"}}>{fFC(netWorth)}</span></div>
+      {equity>0&&<div style={{textAlign:"right",fontSize:11,color:"rgba(255,255,255,0.35)"}}><div>Portfolio: {fC(tv)}</div><div>Home Equity: {fC(equity)}</div></div>}
+    </div>
+  </div>)}
+
+  {goalAmount>0&&(<div style={{...CS,marginBottom:16,padding:"16px 24px",background:"linear-gradient(135deg,rgba(245,158,11,0.06) 0%,rgba(245,158,11,0.02) 100%)",border:"1px solid rgba(245,158,11,0.12)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><span style={{fontSize:12,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.5px"}}>🎯 Net Worth Goal</span><span style={{fontSize:13,fontWeight:600,color:"#f59e0b",fontFamily:"'Space Mono',monospace"}}>{goalPct.toFixed(1)}%</span></div>
+    <div style={{height:8,background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",marginBottom:6}}><div style={{height:"100%",width:`${goalPct}%`,background:"linear-gradient(90deg,#f59e0b,#f97316)",borderRadius:4,transition:"width 0.5s"}}/></div>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"rgba(255,255,255,0.35)"}}><span>{fC(tv)} current</span><span>{fC(goalAmount)} goal</span></div>
+  </div>)}
+
+  {/* Total Card with chart */}
+  <div style={{...CS,marginBottom:20,background:"linear-gradient(135deg,rgba(99,102,241,0.08) 0%,rgba(139,92,246,0.04) 100%)",border:"1px solid rgba(99,102,241,0.15)"}}>
+    <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.5px"}}>Total Portfolio Value</p>
+    <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap"}}>
+      <span style={{fontSize:36,fontWeight:700,fontFamily:"'Space Mono',monospace",letterSpacing:"-1px"}}>{fFC(tv)}</span>
+      {pt>0&&tc!==0&&(<span style={{fontSize:14,fontWeight:600,color:tc>=0?"#10b981":"#ef4444",background:tc>=0?"rgba(16,185,129,0.1)":"rgba(239,68,68,0.1)",padding:"4px 10px",borderRadius:20}}>{tc>=0?"↑":"↓"} {fC(Math.abs(tc))} ({tcp}%)</span>)}
+    </div>
+    {totalContrib>0&&(<div style={{marginTop:8,display:"flex",gap:16,fontSize:12,color:"rgba(255,255,255,0.4)"}}><span>Contributed: {fC(totalContrib)}</span><span style={{color:tv-totalContrib>=0?"#10b981":"#ef4444"}}>Gain: {fC(tv-totalContrib)}</span></div>)}
+    {chartData.length>1&&(<div style={{marginTop:16}}><ResponsiveContainer width="100%" height={180}><AreaChart data={chartData}><defs><linearGradient id="tgi" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366f1" stopOpacity={0.25}/><stop offset="100%" stopColor="#6366f1" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/><XAxis dataKey="date" tickFormatter={fD} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false}/><YAxis tickFormatter={fC} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false} width={70}/><Tooltip content={<TT/>}/><Area type="monotone" dataKey="total" name="Total" stroke="#6366f1" fill="url(#tgi)" strokeWidth={2} dot={false}/>{goalAmount>0&&<ReferenceLine y={goalAmount} stroke="#f59e0b" strokeDasharray="6 4" strokeWidth={1.5}/>}</AreaChart></ResponsiveContainer></div>)}
+  </div>
+
+  {/* YTD Stats */}
+  {ytdStats&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10,marginBottom:20}}>
+    <div style={{...CS,padding:14,textAlign:"center"}}><p style={sm}>YTD Return</p><p style={{...svl,color:ytdStats.ytdPct>=0?"#10b981":"#ef4444",fontSize:18}}>{ytdStats.ytdPct>=0?"+":""}{ytdStats.ytdPct.toFixed(1)}%</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>{ytdStats.ytdChange>=0?"+":""}{fC(ytdStats.ytdChange)}</p></div>
+    {ytdStats.bestMo&&<div style={{...CS,padding:14,textAlign:"center"}}><p style={sm}>Best Month</p><p style={{...svl,color:"#10b981",fontSize:16}}>+{ytdStats.bestMo.pct.toFixed(1)}%</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>{fMY(ytdStats.bestMo.date)}</p></div>}
+    {ytdStats.worstMo&&<div style={{...CS,padding:14,textAlign:"center"}}><p style={sm}>Worst Month</p><p style={{...svl,color:"#ef4444",fontSize:16}}>{ytdStats.worstMo.pct.toFixed(1)}%</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>{fMY(ytdStats.worstMo.date)}</p></div>}
+    <div style={{...CS,padding:14,textAlign:"center"}}><p style={sm}>Accounts</p><p style={{...svl,color:"#a5b4fc",fontSize:18}}>{actv.length}</p><p style={{fontSize:11,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>{snapshots.length} entries</p></div>
+  </div>)}
+
+  {clsd.length>0&&<div style={{marginBottom:16}}><button onClick={()=>setShowClosed(!showClosed)} style={{...BS,padding:"5px 14px",fontSize:12,color:showClosed?"#f87171":"rgba(255,255,255,0.4)"}}>{showClosed?"Hide":"Show"} Closed ({clsd.length})</button></div>}
+
+  {/* Account Cards */}
+  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12,marginBottom:28}}>
+    {dA.map(a=>{const val=((aL[a.id]||{}).value)||0;const prev=aP[a.id]||0;const chv=prev>0?val-prev:0;const g=aG[a.id];const ti=ATYPES.find(t=>t.v===a.type)||ATYPES[10];
+      return(<div key={a.id} style={{...CS,padding:16,borderLeft:`3px solid ${a.closed?"rgba(255,255,255,0.15)":a.color}`,opacity:a.closed?0.6:1}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.5px"}}>{ti.i} {ti.l}</span><Badge closed={a.closed}/></div>
+        <p style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.85)",margin:"0 0 4px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</p>
+        <p style={{fontSize:22,fontWeight:700,fontFamily:"'Space Mono',monospace",margin:0}}>{fC(val)}</p>
+        <div style={{display:"flex",gap:8,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
+          {prev>0&&chv!==0&&<span style={{fontSize:11,color:chv>=0?"#10b981":"#ef4444",fontWeight:600}}>{chv>=0?"+":""}{fC(chv)}</span>}
+          {g&&g.months>=1&&<span style={{fontSize:11,color:g.realPct>=0?"#10b981":"#ef4444",fontWeight:500,background:g.realPct>=0?"rgba(16,185,129,0.08)":"rgba(239,68,68,0.08)",padding:"1px 6px",borderRadius:4}}>{g.realPct>=0?"+":""}{g.realPct.toFixed(1)}%{a.contributions>0?" real":""}</span>}
+        </div>
+        {a.group&&<GBadge group={a.group}/>}
+        {a.notes&&<p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:"4px 0 0",fontStyle:"italic"}}>📝 {a.notes}</p>}
+        {((aL[a.id]||{}).date)&&<p style={{fontSize:10,color:"rgba(255,255,255,0.2)",margin:"4px 0 0"}}>As of {fFD(aL[a.id].date)}</p>}
+      </div>);
+    })}
+  </div>
+
+  {/* Leaderboard */}
+  {sortedGrowth.length>1&&(<div style={{...CS,marginBottom:20}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 14px",fontWeight:600}}>🏆 Growth Leaderboard</p>
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {sortedGrowth.slice(0,8).map((a,i)=>{const g=aG[a.id];return(<div key={a.id} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",borderRadius:10,background:i===0?"rgba(245,158,11,0.06)":"rgba(255,255,255,0.02)"}}>
+        <span style={{fontSize:16,width:28,textAlign:"center",flexShrink:0}}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`}</span>
+        <div style={{width:8,height:8,borderRadius:2,background:a.color,flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0}}><p style={{fontSize:13,fontWeight:600,margin:0,color:"rgba(255,255,255,0.85)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</p></div>
+        <div style={{textAlign:"right",flexShrink:0}}><p style={{fontSize:14,fontWeight:700,margin:0,color:g.realPct>=0?"#10b981":"#ef4444",fontFamily:"'Space Mono',monospace"}}>{g.realPct>=0?"+":""}{g.realPct.toFixed(1)}%</p>{g.ann!==0&&<p style={{fontSize:10,color:"rgba(255,255,255,0.3)",margin:0}}>{g.ann.toFixed(1)}% ann.</p>}</div>
+      </div>);})}
+    </div>
+  </div>)}
+
+  {/* Projection */}
+  {projData.length>0&&(<div style={{...CS,marginBottom:20,padding:"20px 16px"}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 4px",fontWeight:600}}>🔮 Projected Portfolio Growth</p>
+    <p style={{color:"rgba(255,255,255,0.25)",fontSize:11,margin:"0 0 16px"}}>Actual → projected at 4% conservative · 7% moderate · 10% aggressive</p>
+    <ResponsiveContainer width="100%" height={340}>
+      <ComposedChart data={projData}><defs><linearGradient id="projRange" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366f1" stopOpacity={0.12}/><stop offset="100%" stopColor="#6366f1" stopOpacity={0.01}/></linearGradient><linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.2}/><stop offset="100%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/><XAxis dataKey="label" tick={{fill:"rgba(255,255,255,0.3)",fontSize:10}} axisLine={false} tickLine={false} interval={Math.max(1,Math.floor(projData.length/12))}/><YAxis tickFormatter={fC} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false} width={70}/><Tooltip content={<TT/>}/>
+        <Area type="monotone" dataKey="aggressive" name="Aggressive (10%)" stroke="none" fill="url(#projRange)" fillOpacity={1} connectNulls={false}/><Area type="monotone" dataKey="conservative" name="Conservative (4%)" stroke="none" fill="#0d0d1a" fillOpacity={1} connectNulls={false}/>
+        <Line type="monotone" dataKey="aggressive" stroke="rgba(99,102,241,0.3)" strokeWidth={1} strokeDasharray="4 4" dot={false} connectNulls={false} name="Aggressive (10%)"/><Line type="monotone" dataKey="moderate" stroke="#6366f1" strokeWidth={2.5} strokeDasharray="6 4" dot={false} connectNulls={false} name="Moderate (7%)"/><Line type="monotone" dataKey="conservative" stroke="rgba(99,102,241,0.3)" strokeWidth={1} strokeDasharray="4 4" dot={false} connectNulls={false} name="Conservative (4%)"/>
+        <Area type="monotone" dataKey="actual" name="Actual" stroke="#10b981" fill="url(#actualGrad)" strokeWidth={2.5} dot={false} connectNulls={false}/>
+        {goalAmount>0&&<ReferenceLine y={goalAmount} stroke="#f59e0b" strokeDasharray="6 4" strokeWidth={1.5} label={{value:"Goal",fill:"#f59e0b",fontSize:11,position:"right"}}/>}
+      </ComposedChart>
+    </ResponsiveContainer>
+    <div style={{display:"flex",gap:16,justifyContent:"center",marginTop:10,fontSize:11,flexWrap:"wrap"}}><span style={{color:"#10b981"}}>━ Actual</span><span style={{color:"#6366f1"}}>┄ Moderate 7%</span><span style={{color:"rgba(99,102,241,0.4)"}}>█ 4%–10% Range</span></div>
+  </div>)}
+
+  {chartData.length<=1&&accounts.length>0&&(<div style={{...CS,textAlign:"center",padding:"40px 20px"}}><p style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>📉 Log at least 2 entries to see charts.</p></div>)}
+</div>)}
+
+{/* ═══════════ INSIGHTS ═══════════ */}
+{view==="insights"&&accounts.length>0&&(<div>
+  {allocData.length>1&&(<div style={{...CS,marginBottom:20,padding:"20px 16px"}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 16px",fontWeight:600}}>🎯 Account Allocation</p>
+    <div style={{display:"flex",alignItems:"center",gap:24,flexWrap:"wrap"}}>
+      <ResponsiveContainer width={180} height={180}><PieChart><Pie data={allocData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={50} paddingAngle={2} stroke="none">{allocData.map((d,i)=><Cell key={i} fill={d.fill}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>
+      <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,minWidth:160}}>{allocData.map((d,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:13}}><div style={{width:10,height:10,borderRadius:3,background:d.fill,flexShrink:0}}/><span style={{color:"rgba(255,255,255,0.7)",flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</span><span style={{color:"rgba(255,255,255,0.4)",fontFamily:"'Space Mono',monospace",fontSize:12}}>{d.percent}%</span></div>))}</div>
+    </div>
+  </div>)}
+  {groupAlloc.length>1&&(<div style={{...CS,marginBottom:20,padding:"20px 16px"}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 16px",fontWeight:600}}>📦 Allocation by Group</p>
+    <div style={{display:"flex",alignItems:"center",gap:24,flexWrap:"wrap"}}>
+      <ResponsiveContainer width={180} height={180}><PieChart><Pie data={groupAlloc} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={50} paddingAngle={2} stroke="none">{groupAlloc.map((d,i)=><Cell key={i} fill={d.fill}/>)}</Pie><Tooltip content={<TT/>}/></PieChart></ResponsiveContainer>
+      <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,minWidth:160}}>{groupAlloc.map((d,i)=>(<div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:13}}><div style={{width:10,height:10,borderRadius:3,background:d.fill,flexShrink:0}}/><span style={{color:"rgba(255,255,255,0.7)",flex:1}}>{d.name}</span><span style={{color:"rgba(255,255,255,0.4)",fontFamily:"'Space Mono',monospace",fontSize:12}}>{fC(d.value)} ({d.percent}%)</span></div>))}</div>
+    </div>
+  </div>)}
+  {contribData.length>0&&(<div style={{...CS,marginBottom:20,padding:"20px 16px"}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 16px",fontWeight:600}}>💰 Contributions vs Investment Gains</p>
+    <ResponsiveContainer width="100%" height={Math.max(200,contribData.length*50+40)}>
+      <BarChart data={contribData} layout="vertical" margin={{left:80,right:20}}><CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/><XAxis type="number" tickFormatter={fC} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false} width={70} width={undefined}/><YAxis type="category" dataKey="name" tick={{fill:"rgba(255,255,255,0.6)",fontSize:12}} axisLine={false} tickLine={false} width={80}/><Tooltip content={<TT/>}/><Bar dataKey="contributions" name="Contributed" fill="#6366f1" stackId="a"/><Bar dataKey="gain" name="Investment Gain" fill="#10b981" stackId="a" radius={[0,4,4,0]}/></BarChart>
+    </ResponsiveContainer>
+    <div style={{display:"flex",gap:16,justifyContent:"center",marginTop:8,fontSize:12}}><span style={{color:"#6366f1"}}>■ Contributed</span><span style={{color:"#10b981"}}>■ Gain</span></div>
+  </div>)}
+  {chartData.length>1&&accounts.length>1&&(<div style={{...CS,marginBottom:20,padding:"20px 16px"}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 16px",fontWeight:600}}>📊 Account Growth Over Time</p>
+    <div style={{display:"flex",gap:4,marginBottom:12}}>{[{v:"1m",l:"1M"},{v:"3m",l:"3M"},{v:"6m",l:"6M"},{v:"1y",l:"1Y"},{v:"2y",l:"2Y"},{v:"all",l:"All"}].map(r=>(<button key={r.v} onClick={()=>setChartRange(r.v)} style={chp(chartRange===r.v)}>{r.l}</button>))}</div>
+    <ResponsiveContainer width="100%" height={280}><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/><XAxis dataKey="date" tickFormatter={fD} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false}/><YAxis tickFormatter={fC} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false} width={70}/><Tooltip content={<TT/>}/>{accounts.map(a=>(<Line key={a.id} type="monotone" dataKey={a.id} name={a.name} stroke={a.color} strokeWidth={a.closed?1:2} strokeDasharray={a.closed?"4 4":undefined} dot={false} activeDot={{r:4}}/>))}</LineChart></ResponsiveContainer>
+  </div>)}
+  {momData.length>1&&(<div style={{...CS,padding:"20px 16px"}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 14px",fontWeight:600}}>📅 Month-over-Month Summary</p>
+    <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+      <thead><tr style={{borderBottom:"1px solid rgba(255,255,255,0.08)"}}><th style={{textAlign:"left",padding:"8px 12px",color:"rgba(255,255,255,0.4)",fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Month</th><th style={{textAlign:"right",padding:"8px 12px",color:"rgba(255,255,255,0.4)",fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Total</th><th style={{textAlign:"right",padding:"8px 12px",color:"rgba(255,255,255,0.4)",fontWeight:600,fontSize:11,textTransform:"uppercase"}}>Change</th><th style={{textAlign:"right",padding:"8px 12px",color:"rgba(255,255,255,0.4)",fontWeight:600,fontSize:11,textTransform:"uppercase"}}>%</th></tr></thead>
+      <tbody>{[...momData].reverse().slice(0,24).map(m=>(<tr key={m.month} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}><td style={{padding:"8px 12px",color:"rgba(255,255,255,0.7)",fontWeight:500}}>{fMY(m.date)}</td><td style={{padding:"8px 12px",textAlign:"right",fontFamily:"'Space Mono',monospace",color:"#fff"}}>{fC(m.total)}</td><td style={{padding:"8px 12px",textAlign:"right",fontFamily:"'Space Mono',monospace",color:m.change>=0?"#10b981":"#ef4444"}}>{m.change!==0?`${m.change>=0?"+":""}${fC(m.change)}`:"-"}</td><td style={{padding:"8px 12px",textAlign:"right",fontFamily:"'Space Mono',monospace",color:m.pct>=0?"#10b981":"#ef4444"}}>{m.pct!==0?`${m.pct>=0?"+":""}${m.pct.toFixed(1)}%`:"-"}</td></tr>))}</tbody>
+    </table></div>
+  </div>)}
+</div>)}
+
+{/* ═══════════ MORTGAGE ═══════════ */}
+{view==="mortgage"&&(<div>
+  <div style={{...CS,marginBottom:20,background:"linear-gradient(135deg,rgba(20,184,166,0.08) 0%,rgba(20,184,166,0.02) 100%)",border:"1px solid rgba(20,184,166,0.15)"}}>
+    <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,margin:"0 0 4px",textTransform:"uppercase",letterSpacing:"0.5px"}}>🏠 Home Equity</p>
+    <span style={{fontSize:36,fontWeight:700,fontFamily:"'Space Mono',monospace",letterSpacing:"-1px",color:equity>=0?"#14b8a6":"#ef4444"}}>{fFC(equity)}</span>
+    {homeValue>0&&<p style={{color:"rgba(255,255,255,0.3)",fontSize:12,margin:"8px 0 0"}}>{((equity/homeValue)*100).toFixed(1)}% equity in home</p>}
+  </div>
+  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16,marginBottom:28}}>
+    <div style={{...CS}}><p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 12px",fontWeight:600}}>💳 Mortgage Balance</p><p style={{fontSize:24,fontWeight:700,fontFamily:"'Space Mono',monospace",margin:"0 0 12px",color:"#ef4444"}}>{fFC(mortgageBalance)}</p><div style={{display:"flex",gap:8}}><input type="number" style={{...IS,padding:"8px 12px",fontSize:13}} placeholder="Balance..." value={mortBalInput} onChange={e=>setMortBalInput(e.target.value)}/></div></div>
+    <div style={{...CS}}><p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 12px",fontWeight:600}}>🏡 Home Value</p><p style={{fontSize:24,fontWeight:700,fontFamily:"'Space Mono',monospace",margin:"0 0 12px",color:"#10b981"}}>{fFC(homeValue)}</p><div style={{display:"flex",gap:8}}><input type="number" style={{...IS,padding:"8px 12px",fontSize:13}} placeholder="Value..." value={homeValInput} onChange={e=>setHomeValInput(e.target.value)}/></div></div>
+    <div style={{...CS}}><p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 12px",fontWeight:600}}>📊 Interest Rate (%)</p><p style={{fontSize:24,fontWeight:700,fontFamily:"'Space Mono',monospace",margin:"0 0 12px",color:"#a5b4fc"}}>{mortRate>0?`${mortRate}%`:"—"}</p><div style={{display:"flex",gap:8}}><input type="number" step="0.01" style={{...IS,padding:"8px 12px",fontSize:13}} placeholder="e.g. 6.5" value={mortRateInput} onChange={e=>setMortRateInput(e.target.value)}/></div></div>
+    <div style={{...CS}}><p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 12px",fontWeight:600}}>💵 Monthly Payment</p><p style={{fontSize:24,fontWeight:700,fontFamily:"'Space Mono',monospace",margin:"0 0 12px",color:"#f59e0b"}}>{mortPayment>0?fFC(mortPayment):"—"}</p><div style={{display:"flex",gap:8}}><input type="number" style={{...IS,padding:"8px 12px",fontSize:13}} placeholder="Payment..." value={mortPayInput} onChange={e=>setMortPayInput(e.target.value)}/></div></div>
+  </div>
+  <div style={{marginBottom:20}}><button onClick={saveMortgageVals} style={BP}>💾 Save Mortgage Info</button></div>
+
+  {homeValue>0&&(<div style={{...CS,marginBottom:20}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 12px",fontWeight:600}}>📊 Equity Breakdown</p>
+    <div style={{height:32,background:"rgba(255,255,255,0.06)",borderRadius:8,overflow:"hidden",display:"flex",marginBottom:12}}>
+      <div style={{height:"100%",width:`${Math.max(0,Math.min(100,(equity/homeValue)*100))}%`,background:"linear-gradient(90deg,#14b8a6,#10b981)",transition:"width 0.5s",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#fff",minWidth:equity>0?40:0}}>{equity>0?`${((equity/homeValue)*100).toFixed(0)}%`:""}</div>
+      <div style={{height:"100%",flex:1,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>{mortgageBalance>0?`${((mortgageBalance/homeValue)*100).toFixed(0)}% owed`:""}</div>
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"rgba(255,255,255,0.4)"}}><span>🟢 Equity: {fC(equity)}</span><span>🔴 Owed: {fC(mortgageBalance)}</span></div>
+  </div>)}
+
+  {mortProjData.length>1&&(<div style={{...CS,padding:"20px 16px"}}>
+    <p style={{color:"rgba(255,255,255,0.5)",fontSize:13,margin:"0 0 4px",fontWeight:600}}>📉 Mortgage Payoff Projection</p>
+    <p style={{color:"rgba(255,255,255,0.25)",fontSize:11,margin:"0 0 16px"}}>Based on {mortRate}% rate and {fC(mortPayment)}/mo payment</p>
+    <ResponsiveContainer width="100%" height={240}>
+      <AreaChart data={mortProjData}><defs><linearGradient id="mortGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={0.2}/><stop offset="100%" stopColor="#ef4444" stopOpacity={0}/></linearGradient></defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/><XAxis dataKey="label" tick={{fill:"rgba(255,255,255,0.3)",fontSize:10}} axisLine={false} tickLine={false} interval={Math.max(1,Math.floor(mortProjData.length/10))}/><YAxis tickFormatter={fC} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false} width={70}/>
+        <Tooltip content={<TT/>}/><Area type="monotone" dataKey="balance" name="Balance" stroke="#ef4444" fill="url(#mortGrad)" strokeWidth={2} dot={false}/>
+      </AreaChart>
+    </ResponsiveContainer>
+    {mortProjData.length>0&&<p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"8px 0 0",textAlign:"center"}}>Paid off by ~{mortProjData[mortProjData.length-1].label}</p>}
+  </div>)}
+</div>)}
+
+{/* ═══════════ ACCOUNTS ═══════════ */}
+{view==="accounts"&&accounts.length>0&&(<div style={{display:"flex",flexDirection:"column",gap:12}}>
+  {actv.length>0&&<p style={{color:"rgba(255,255,255,0.4)",fontSize:12,textTransform:"uppercase",letterSpacing:"0.5px",margin:"0 0 4px"}}>Active ({actv.length})</p>}
+  {actv.map(a=>{const ti=ATYPES.find(t=>t.v===a.type)||ATYPES[10];const val=((aL[a.id]||{}).value)||0;const g=aG[a.id];const ah=snapshots.filter(s=>s.values[a.id]!==undefined).map(s=>({date:s.date,value:s.values[a.id]}));
+    return(<div key={a.id} style={{...CS,borderLeft:`3px solid ${a.color}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div><p style={{fontSize:16,fontWeight:600,margin:0,color:"#fff"}}>{ti.i} {a.name} <GBadge group={a.group}/></p><p style={{fontSize:12,color:"rgba(255,255,255,0.35)",margin:"2px 0 0"}}>{ti.l} · {ah.length} entries{g&&g.months>=1?` · ${g.months}mo`:""}</p></div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          <select value={a.group||"Other"} onChange={e=>updateGroup(a.id,e.target.value)} style={{...IS,width:"auto",padding:"4px 8px",fontSize:11,borderRadius:6}}>{GROUPS.map(g=><option key={g} value={g}>{g}</option>)}</select>
+          <button onClick={()=>toggleClosed(a.id)} style={{...BS,padding:"6px 12px",fontSize:12}}>📁 Close</button>
+          {confirmDelete===a.id?(<><button onClick={()=>delAcct(a.id)} style={{...BD,padding:"6px 12px",fontSize:12}}>⚠️ Permanently Delete</button><button onClick={()=>setConfirmDelete(null)} style={{...BS,padding:"6px 12px",fontSize:12}}>Cancel</button></>):(<button onClick={()=>setConfirmDelete(a.id)} style={{...BS,padding:"6px 12px",fontSize:12,color:"rgba(255,255,255,0.25)"}}>🗑️</button>)}
+        </div>
       </div>
+      <p style={{fontSize:24,fontWeight:700,fontFamily:"'Space Mono',monospace",margin:"0 0 4px"}}>{fFC(val)}</p>
+      <div style={{display:"flex",gap:10,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+        {g&&g.months>=1&&(<>
+          <div style={{padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><p style={sm}>{a.contributions>0?"Real":"All-Time"} Return</p><p style={{...svl,color:g.realPct>=0?"#10b981":"#ef4444"}}>{g.realPct>=0?"+":""}{g.realPct.toFixed(1)}%</p></div>
+          <div style={{padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><p style={sm}>Dollar Change</p><p style={{...svl,color:g.realDollar>=0?"#10b981":"#ef4444"}}>{g.realDollar>=0?"+":""}{fC(g.realDollar)}</p></div>
+          {g.ann!==0&&<div style={{padding:"6px 10px",borderRadius:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}><p style={sm}>Annualized</p><p style={{...svl,color:g.ann>=0?"#10b981":"#ef4444"}}>{g.ann>=0?"+":""}{g.ann.toFixed(1)}%</p></div>}
+        </>)}
+        <div style={{padding:"6px 10px",borderRadius:8,background:"rgba(99,102,241,0.05)",border:"1px solid rgba(99,102,241,0.12)"}}>
+          <p style={sm}>Total Contributed</p>
+          {editContrib===a.id?(<div style={{display:"flex",gap:4,alignItems:"center",marginTop:2}}><input type="number" value={contribInput} onChange={e=>setContribInput(e.target.value)} style={{...IS,width:100,padding:"4px 8px",fontSize:12}} placeholder="0" autoFocus onKeyDown={e=>e.key==="Enter"&&saveContrib(a.id)}/><button onClick={()=>saveContrib(a.id)} style={{background:"none",border:"none",color:"#10b981",cursor:"pointer",fontSize:14}}>✓</button><button onClick={()=>setEditContrib(null)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:14}}>✕</button></div>):(<p style={{...svl,color:"#a5b4fc",cursor:"pointer",display:"flex",alignItems:"center",gap:4}} onClick={()=>{setEditContrib(a.id);setContribInput(String(a.contributions||0));}}>{fC(a.contributions||0)} <span style={{fontSize:10,color:"rgba(255,255,255,0.3)"}}>✏️</span></p>)}
+        </div>
+      </div>
+      {/* Notes */}
+      <div style={{marginBottom:8}}>
+        {editNote===a.id?(<div style={{display:"flex",gap:6,alignItems:"center"}}><input style={{...IS,padding:"6px 10px",fontSize:12}} placeholder="Add a note..." value={noteInput} onChange={e=>setNoteInput(e.target.value)} autoFocus onKeyDown={e=>e.key==="Enter"&&saveNote(a.id)}/><button onClick={()=>saveNote(a.id)} style={{background:"none",border:"none",color:"#10b981",cursor:"pointer",fontSize:14}}>✓</button><button onClick={()=>setEditNote(null)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:14}}>✕</button></div>):(
+          <p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:0,cursor:"pointer"}} onClick={()=>{setEditNote(a.id);setNoteInput(a.notes||"");}}>{a.notes?`📝 ${a.notes}`:<span style={{color:"rgba(255,255,255,0.15)"}}>+ Add note</span>}</p>
+        )}
+      </div>
+      {ah.length>1&&(<ResponsiveContainer width="100%" height={100}><AreaChart data={ah}><defs><linearGradient id={`g-${a.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={a.color} stopOpacity={0.2}/><stop offset="100%" stopColor={a.color} stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/><YAxis tickFormatter={fC} tick={{fill:"rgba(255,255,255,0.3)",fontSize:11}} axisLine={false} tickLine={false} width={70} width={55} tick={{fill:"rgba(255,255,255,0.2)",fontSize:9}}/><Area type="monotone" dataKey="value" stroke={a.color} fill={`url(#g-${a.id})`} strokeWidth={2} dot={false}/></AreaChart></ResponsiveContainer>)}
+    </div>);
+  })}
+  {clsd.length>0&&(<>
+    <p style={{color:"rgba(255,255,255,0.35)",fontSize:12,textTransform:"uppercase",letterSpacing:"0.5px",margin:"16px 0 4px"}}>Closed ({clsd.length})</p>
+    {clsd.map(a=>{const ti=ATYPES.find(t=>t.v===a.type)||ATYPES[10];const ah=snapshots.filter(s=>s.values[a.id]!==undefined).map(s=>({date:s.date,value:s.values[a.id]}));const lv=((aL[a.id]||{}).value)||0;const g=aG[a.id];
+      return(<div key={a.id} style={{...CS,borderLeft:"3px solid rgba(255,255,255,0.15)",opacity:0.7}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+          <div><p style={{fontSize:16,fontWeight:600,margin:0,color:"rgba(255,255,255,0.7)"}}>{ti.i} {a.name} <Badge closed={true}/></p><p style={{fontSize:12,color:"rgba(255,255,255,0.3)",margin:"2px 0 0"}}>Closed {a.closedAt?fFD(a.closedAt):""}</p></div>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>toggleClosed(a.id)} style={{...BS,padding:"6px 12px",fontSize:12}}>🔓 Reopen</button>
+            {confirmDelete===a.id?(<><button onClick={()=>delAcct(a.id)} style={{...BD,padding:"6px 12px",fontSize:12}}>⚠️ Permanently Delete</button><button onClick={()=>setConfirmDelete(null)} style={{...BS,padding:"6px 12px",fontSize:12}}>Cancel</button></>):(<button onClick={()=>setConfirmDelete(a.id)} style={{...BS,padding:"6px 12px",fontSize:12,color:"rgba(255,255,255,0.25)"}}>🗑️</button>)}
+          </div>
+        </div>
+        <p style={{fontSize:20,fontWeight:700,fontFamily:"'Space Mono',monospace",margin:"0 0 4px",color:"rgba(255,255,255,0.5)"}}>Last: {fFC(lv)}</p>
+        {g&&g.months>=1&&<p style={{fontSize:12,color:g.realPct>=0?"#10b981":"#ef4444",margin:"0 0 8px"}}>{g.realPct>=0?"+":""}{g.realPct.toFixed(1)}% over {g.months}mo</p>}
+      </div>);
+    })}
+  </>)}
+</div>)}
+
+{/* ═══════════ HISTORY ═══════════ */}
+{view==="history"&&(<div>
+  {snapshots.length>0&&(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+    <p style={{color:"rgba(255,255,255,0.35)",fontSize:12,margin:0}}>{snapshots.length} total entries</p>
+    <button onClick={()=>exportCSV(accounts,snapshots)} style={{...BS,padding:"6px 14px",fontSize:12}}>📥 Export CSV</button>
+  </div>)}
+  {snapshots.length===0?(<div style={{...CS,textAlign:"center",padding:"40px 20px"}}><p style={{color:"rgba(255,255,255,0.4)",fontSize:14}}>No entries logged yet.</p></div>):(
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {[...filled].reverse().map(s=>{const st=accounts.reduce((sum,a)=>sum+(s.filled[a.id]||0),0);
+        return(<div key={s.id} style={{...CS,padding:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:14,fontWeight:600,color:"rgba(255,255,255,0.8)"}}>📅 {fFD(s.date)}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:16,fontWeight:700,fontFamily:"'Space Mono',monospace"}}>{fFC(st)}</span>
+              <button onClick={()=>openEditSnap(s)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.3)",cursor:"pointer",fontSize:13,padding:"2px 6px"}}>✏️</button>
+              <button onClick={()=>delSnap(s.id)} style={{background:"none",border:"none",color:"rgba(255,255,255,0.2)",cursor:"pointer",fontSize:13,padding:"2px 6px"}}>✕</button>
+            </div>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {accounts.filter(a=>s.values[a.id]!==undefined).map(a=>(<span key={a.id} style={{background:"rgba(255,255,255,0.04)",borderRadius:6,padding:"4px 10px",fontSize:12,color:"rgba(255,255,255,0.6)",borderLeft:`2px solid ${a.color}`}}>{a.name}: <span style={{fontFamily:"'Space Mono',monospace",color:"#fff"}}>{fC(s.values[a.id])}</span></span>))}
+          </div>
+        </div>);
+      })}
+    </div>
+  )}
+</div>)}
+      </div>
+
+      {/* ═══ ADD ACCOUNT ═══ */}
+      {showAddAccount&&(<div style={MO} onClick={()=>setShowAddAccount(false)}><div style={MC} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:18,fontWeight:700,margin:"0 0 20px"}}>Add Account</h3>
+        <div style={{marginBottom:14}}><label style={LS}>Account Name</label><input style={IS} placeholder="e.g. Fidelity 401(k)" value={newAccount.name} onChange={e=>setNewAccount({...newAccount,name:e.target.value})} onKeyDown={e=>e.key==="Enter"&&addAcct()} autoFocus/></div>
+        <div style={{marginBottom:14}}><label style={LS}>Account Type</label><select style={{...IS,appearance:"auto",cursor:"pointer"}} value={newAccount.type} onChange={e=>setNewAccount({...newAccount,type:e.target.value})}>{ATYPES.map(t=><option key={t.v} value={t.v}>{t.i} {t.l}</option>)}</select></div>
+        <div style={{marginBottom:20}}><label style={LS}>Group</label><select style={{...IS,appearance:"auto",cursor:"pointer"}} value={newAccount.group} onChange={e=>setNewAccount({...newAccount,group:e.target.value})}>{GROUPS.map(g=><option key={g} value={g}>{g}</option>)}</select></div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button onClick={()=>setShowAddAccount(false)} style={BS}>Cancel</button><button onClick={addAcct} style={BP}>Add Account</button></div>
+      </div></div>)}
+
+      {/* ═══ LOG ENTRY ═══ */}
+      {showLogEntry&&(<div style={MO} onClick={()=>setShowLogEntry(false)}><div style={MC} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:18,fontWeight:700,margin:"0 0 4px"}}>Log Account Values</h3>
+        <p style={{color:"rgba(255,255,255,0.35)",fontSize:12,margin:"0 0 16px"}}>Pre-filled with last known values — just update what changed.</p>
+        <div style={{marginBottom:16}}><label style={LS}>Date</label><input type="date" style={IS} value={entryDate} onChange={e=>setEntryDate(e.target.value)}/></div>
+        {actv.map(a=>{const ti=ATYPES.find(t=>t.v===a.type)||ATYPES[10];return(<div key={a.id} style={{marginBottom:12}}><label style={{...LS,textTransform:"none"}}><span style={{color:a.color}}>●</span> {ti.i} {a.name}</label><input type="number" style={IS} placeholder="Enter current value..." value={entryValues[a.id]||""} onChange={e=>setEntryValues({...entryValues,[a.id]:e.target.value})} step="0.01"/></div>);})}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}><button onClick={()=>setShowLogEntry(false)} style={BS}>Cancel</button><button onClick={logEntry} style={BP}>Save Entry</button></div>
+      </div></div>)}
+
+      {/* ═══ EDIT ENTRY ═══ */}
+      {editSnap&&(<div style={MO} onClick={()=>setEditSnap(null)}><div style={MC} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:18,fontWeight:700,margin:"0 0 4px"}}>Edit Entry</h3>
+        <p style={{color:"rgba(255,255,255,0.35)",fontSize:12,margin:"0 0 16px"}}>📅 {fFD(editSnap.date)}</p>
+        {accounts.filter(a=>editSnap.values[a.id]!==undefined).map(a=>{const ti=ATYPES.find(t=>t.v===a.type)||ATYPES[10];return(<div key={a.id} style={{marginBottom:12}}><label style={{...LS,textTransform:"none"}}><span style={{color:a.color}}>●</span> {ti.i} {a.name}</label><input type="number" style={IS} value={editSnapValues[a.id]||""} onChange={e=>setEditSnapValues({...editSnapValues,[a.id]:e.target.value})} step="0.01"/></div>);})}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}><button onClick={()=>setEditSnap(null)} style={BS}>Cancel</button><button onClick={saveEditSnap} style={BP}>Save Changes</button></div>
+      </div></div>)}
+
+      {/* ═══ SETTINGS ═══ */}
+      {showSettings&&(<div style={MO} onClick={()=>setShowSettings(false)}><div style={MC} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:18,fontWeight:700,margin:"0 0 20px"}}>⚙️ Settings</h3>
+        <div style={{marginBottom:20}}>
+          <label style={LS}>🎯 Net Worth Goal</label>
+          <p style={{color:"rgba(255,255,255,0.35)",fontSize:12,margin:"0 0 8px"}}>Set a target to see progress on your dashboard and chart.</p>
+          <input type="number" style={IS} placeholder="e.g. 1000000" value={goalInput} onChange={e=>setGoalInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveGoal()}/>
+          {goalAmount>0&&<p style={{color:"rgba(255,255,255,0.3)",fontSize:12,margin:"6px 0 0"}}>Current goal: {fFC(goalAmount)}</p>}
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}><button onClick={()=>setShowSettings(false)} style={BS}>Cancel</button><button onClick={saveGoal} style={BP}>Save Goal</button></div>
+      </div></div>)}
+
+      {/* ═══ IMPORT CSV ═══ */}
+      {showImport&&(<div style={MO} onClick={()=>setShowImport(false)}><div style={{...MC,maxWidth:640}} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:18,fontWeight:700,margin:"0 0 4px"}}>📤 Import CSV</h3>
+        <p style={{color:"rgba(255,255,255,0.4)",fontSize:13,margin:"0 0 20px"}}>Upload a spreadsheet with dates and account values.</p>
+        {importResult&&(<div style={{textAlign:"center",padding:"20px 0"}}><div style={{fontSize:48,marginBottom:12}}>✅</div><p style={{fontSize:16,fontWeight:600,color:"#10b981",margin:"0 0 8px"}}>Import Complete!</p><p style={{color:"rgba(255,255,255,0.5)",fontSize:14,margin:"0 0 4px"}}>{importResult.importedRows} entries imported</p>{importResult.newAccounts>0&&<p style={{color:"rgba(255,255,255,0.4)",fontSize:13,margin:0}}>{importResult.newAccounts} new account{importResult.newAccounts>1?"s":""} created</p>}<button onClick={()=>{resetImport();setShowImport(false);}} style={{...BP,marginTop:20}}>Done</button></div>)}
+        {!csvData&&!importResult&&(<div>
+          <div style={{border:"2px dashed rgba(255,255,255,0.1)",borderRadius:12,padding:"40px 20px",textAlign:"center",cursor:"pointer",background:"rgba(255,255,255,0.02)"}} onClick={()=>fileRef.current&&fileRef.current.click()}><div style={{fontSize:32,marginBottom:8}}>📄</div><p style={{color:"rgba(255,255,255,0.6)",fontSize:14,margin:"0 0 4px"}}>Click to select a CSV file</p><p style={{color:"rgba(255,255,255,0.3)",fontSize:12,margin:0}}>.csv and .tsv supported</p></div>
+          <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" style={{display:"none"}} onChange={handleFile}/>
+        </div>)}
+        {csvData&&!importResult&&(<div>
+          <div style={{padding:12,background:"rgba(16,185,129,0.08)",borderRadius:10,border:"1px solid rgba(16,185,129,0.15)",marginBottom:20}}><p style={{color:"#10b981",fontSize:13,margin:0}}>✓ Parsed {csvData.length} rows · {csvHeaders.length} columns</p></div>
+          <div style={{marginBottom:16}}><label style={LS}>Date Column</label><select style={{...IS,appearance:"auto",cursor:"pointer"}} value={dateCol} onChange={e=>setDateCol(e.target.value)}>{csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}</select></div>
+          <label style={{...LS,marginBottom:12}}>Map Columns to Accounts</label>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+            {csvHeaders.filter(h=>h!==dateCol).map(h=>{const m=colMap[h]||{};const sk=m._skip;
+              return(<div key={h} style={{padding:12,borderRadius:10,background:sk?"rgba(255,255,255,0.01)":"rgba(255,255,255,0.03)",border:sk?"1px solid rgba(255,255,255,0.04)":"1px solid rgba(255,255,255,0.08)",opacity:sk?0.5:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:sk?0:10}}><span style={{fontSize:13,fontWeight:600,color:"#fff",fontFamily:"'Space Mono',monospace"}}>"{h}"</span><button onClick={()=>toggleSkip(h)} style={{background:"none",border:"none",fontSize:12,cursor:"pointer",color:sk?"#10b981":"rgba(255,255,255,0.35)"}}>{sk?"Include":"Skip"}</button></div>
+                {!sk&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}><select style={{...IS,flex:1,minWidth:140,padding:"6px 10px",fontSize:12}} value={m.accountId||""} onChange={e=>linkCol(h,e.target.value)}><option value="">+ Create New</option>{accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select>{!m.accountId&&(<><input style={{...IS,flex:1,minWidth:100,padding:"6px 10px",fontSize:12}} placeholder="Name" value={m.accountName||""} onChange={e=>updateCol(h,"accountName",e.target.value)}/><select style={{...IS,width:110,padding:"6px 10px",fontSize:12}} value={m.accountType||"other"} onChange={e=>updateCol(h,"accountType",e.target.value)}>{ATYPES.map(t=><option key={t.v} value={t.v}>{t.i} {t.l}</option>)}</select></>)}</div>)}
+              </div>);
+            })}
+          </div>
+          {importPreview&&(<div style={{padding:14,background:"rgba(99,102,241,0.06)",borderRadius:10,border:"1px solid rgba(99,102,241,0.15)",marginBottom:16}}>
+            <p style={{fontSize:13,fontWeight:600,color:"#a5b4fc",margin:"0 0 6px"}}>Preview</p>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",lineHeight:1.8}}><div>📅 {importPreview.validRows} rows · 📊 {importPreview.totalCols} columns</div>{importPreview.skippedRows>0&&<div>⚠️ {importPreview.skippedRows} skipped</div>}{importPreview.newAccts>0&&<div>✨ {importPreview.newAccts} new accounts</div>}{importPreview.existingAccts>0&&<div>🔗 {importPreview.existingAccts} existing</div>}{importPreview.dupes>0&&<div style={{color:"#f59e0b"}}>⚠️ {importPreview.dupes} dates overlap with existing data (will merge)</div>}</div>
+          </div>)}
+          <div style={{display:"flex",gap:10,justifyContent:"space-between"}}><button onClick={resetImport} style={BS}>← Back</button><div style={{display:"flex",gap:10}}>{!importPreview?(<button onClick={genPreview} style={BP}>Preview</button>):(<button onClick={execImport} style={BG}>🚀 Import {importPreview.validRows} Rows</button>)}</div></div>
+        </div>)}
+        {!importResult&&<div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}><button onClick={()=>setShowImport(false)} style={{...BS,padding:"8px 16px",fontSize:12}}>Close</button></div>}
+      </div></div>)}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(FinanceTracker));
 </script>
 </body>
 </html>
